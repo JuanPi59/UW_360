@@ -1,0 +1,16 @@
+# Entorno virtual de Python
+venv/
+.venv/
+
+# Caché de Python
+__pycache__/
+*.pyc
+
+# Archivo de Streamlit con la API Key
+.streamlit/secrets.toml
+config.toml
+
+# Archivos de credenciales (si usas un archivo separado)
+credentials.txt
+*.key
+*.pem
