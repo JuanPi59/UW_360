@@ -336,4 +336,4 @@ if __name__ == "__main__":
             seccion_resultados(datos_suscripcion)
             
     else:
-        st.info("Por favor, complete los datos en la pestaña '1. Input de Datos' y presione e                
+        st.info("Por favor, complete los datos en la pestaña '1. Input de Datos' y presione el botón para iniciar el análisis.")

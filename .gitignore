@@ -7,7 +7,7 @@ __pycache__/
 *.pyc
 
 # Archivo de Streamlit con la API Key
-.streamlit/secrets.toml
+.streamlit/
 config.toml
 
 # Archivos de credenciales (si usas un archivo separado)
