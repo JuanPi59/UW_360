@@ -11,7 +11,7 @@ import time # Para simular procesos
 
 # **REEMPLAZA** "TU_API_KEY_AQUI" con tu clave de OpenAI. 
 # En un entorno real, usa st.secrets["OPENAI_API_KEY"] para mayor seguridad.
-API_KEY = st.secrets["OPENAI_API_KEY"] 
+API_KEY = st.secrets.get("openai_api_key") 
 
 try:
     client = OpenAI(api_key=API_KEY)
