@@ -1,0 +1,14 @@
+{
+    "tasa_base": {
+        "IND001": 2.5,
+        "IND002": 0.8,
+        "IND003": 1.5,
+        "IND004": 3.0
+    },
+    "apetito_riesgo": {
+        "IND001": "Medio-Alto",
+        "IND002": "Bajo",
+        "IND003": "Medio",
+        "IND004": "Alto"
+    }
+}

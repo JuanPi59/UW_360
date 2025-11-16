@@ -1,0 +1,21 @@
+{
+    "giro_industria": {
+        "IND001": "Manufactura (Maquinaria y Equipo)",
+        "IND002": "Servicios Financieros",
+        "IND003": "Comercio (Retail)",
+        "IND004": "Energía (Generación)"
+    },
+    "ubicacion_estado": {
+        "MEX": "Estado de México",
+        "CDMX": "Ciudad de México",
+        "NL": "Nuevo León",
+        "JAL": "Jalisco"
+    },
+    "medidas_prevencion": {
+        "MP001": "Sistemas de Rociadores Automáticos",
+        "MP002": "Alarmas contra Incendio Centralizadas",
+        "MP003": "CCTV y Monitoreo 24/7",
+        "MP004": "Control de Acceso Riguroso",
+        "MP005": "Ninguna de las anteriores"
+    }
+}
