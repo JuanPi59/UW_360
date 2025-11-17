@@ -4,6 +4,7 @@ from openai import OpenAI
 import json
 import os
 import time # Para simular procesos
+from prompts import stronger_prompt
 
 # --- 0. Configuración Inicial y Carga de Datos ---
 
@@ -65,7 +66,7 @@ def buscar_resumir(giro_key, estado_key):
     
     prompt = f"""
     Eres un suscriptor experto en seguros de daños para empresas en México.
-    Realiza una búsqueda exhaustiva de noticias recientes sobre siniestralidad,
+    Realiza una búsqueda exhaustiva de noticias en los últimos 3 años sobre siniestralidad,
     exposición catastrófica o riesgos regulatorios para la industria de '{giro}'
     en la región de '{estado}'.
     
@@ -80,9 +81,9 @@ def buscar_resumir(giro_key, estado_key):
 
     Formato de Salida Requerido:
     NOTICIAS:
-    - [Título 1]
-    - [Título 2]
-    - [Título 3]
+    - [Fecha de publicación] [Título 1] [Enlace si es posible]
+    - [Fecha de publicación] [Título 2] [Enlace si es posible]
+    - [Fecha de publicación] [Título 3] [Enlace si es posible]
     
     RESUMEN DE RIESGO: [Resumen]
     
@@ -94,7 +95,7 @@ def buscar_resumir(giro_key, estado_key):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Actúa como un analista de riesgos experto."},
+                {"role": "system", "content": stronger_prompt},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7
