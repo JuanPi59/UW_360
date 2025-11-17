@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import pandas as pd
 from openai import OpenAI
@@ -11,7 +9,7 @@ import time # Para simular procesos
 
 # **REEMPLAZA** "TU_API_KEY_AQUI" con tu clave de OpenAI. 
 # En un entorno real, usa st.secrets["OPENAI_API_KEY"] para mayor seguridad.
-API_KEY = st.secrets.get("openai_api_key") 
+API_KEY = st.secrets["openai_api_key"]
 
 try:
     client = OpenAI(api_key=API_KEY)
@@ -47,10 +45,10 @@ APETITO_RIESGO = TARIFAS.get("apetito_riesgo", {})
 
 
 st.set_page_config(
-    page_title="ASSIST-Seguros | Suscripción Inteligente",
+    page_title="Underwritter 360 | Suscripción Inteligente",
     layout="wide"
 )
-st.title("🛡️ ASSIST-Seguros: Aplicación de Suscripción Inteligente")
+st.title("🛡️ Underwritter 360: Aplicación de Suscripción Inteligente")
 st.markdown("Herramienta de Ciencia de Datos para la evaluación de riesgos empresariales.")
 
 # --- 1. Funciones del Chatbot y PLN ---
