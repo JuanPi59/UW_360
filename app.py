@@ -48,14 +48,14 @@ st.set_page_config(
     page_title="Underwritter 360 | Suscripción Inteligente",
     layout="wide"
 )
-st.title("🛡️ Underwritter 360: Aplicación de Suscripción Inteligente")
+st.title("Underwritter 360:  Suscripción Inteligente")
 st.markdown("Herramienta de Ciencia de Datos para la evaluación de riesgos empresariales.")
 
 # --- 1. Funciones del Chatbot y PLN ---
 
-def buscar_y_resumir_riesgo_openai(giro_key, estado_key):
+def buscar_resumir(giro_key, estado_key):
     """
-    Consulta a OpenAI para buscar (simular) noticias y obtener un resumen de riesgo.
+    Consulta a OpenAI para buscar noticias y obtener un resumen de riesgo.
     """
     if not client:
         return "ERROR_API"
@@ -65,17 +65,19 @@ def buscar_y_resumir_riesgo_openai(giro_key, estado_key):
     
     prompt = f"""
     Eres un suscriptor experto en seguros de daños para empresas en México.
-    Realiza una búsqueda exhaustiva (simulada) de noticias recientes sobre siniestralidad,
+    Realiza una búsqueda exhaustiva de noticias recientes sobre siniestralidad,
     exposición catastrófica o riesgos regulatorios para la industria de '{giro}'
     en la región de '{estado}'.
     
     Luego:
-    1. Genera 3 títulos de noticias ficticias pero realistas que encuentres.
+    1. Muestra 3 títulos de noticias realistas que encuentres.
     2. Genera un resumen conciso de 5 líneas sobre los principales riesgos agravantes
        encontrados para esta combinación de Giro/Ubicación.
-    3. Proporciona una clasificación de Riesgo 'IA' (Bajo, Medio, Alto) y una Cuota Estimada 'IA'
-       (un número entre 0.5 y 4.0).
+    3. Proporciona una clasificación de Riesgo 'IA' (Bajo, Medio, Alto) y una Cuota Estimada.
     
+    En caso de no encontrar noticias relevantes sobre  la combinación Giro/Ubicación,
+    busca información general sobre riesgos en la industria de '{giro}' en México.
+
     Formato de Salida Requerido:
     NOTICIAS:
     - [Título 1]
@@ -104,10 +106,10 @@ def buscar_y_resumir_riesgo_openai(giro_key, estado_key):
 
 # --- 2. Secciones de Streamlit (Pestañas) ---
 
-def seccion_inputs_usuario():
+def inputs_usuario():
     """Define la sección 1: Entrada de datos del suscriptor."""
     st.header("1. 📝 Input de Datos del Negocio")
-    st.markdown("Seleccione las características clave de la empresa a suscribir.")
+    st.markdown("Ingrese los datos del riesgo a evaluar.")
     
     # Inicializa el estado de la sesión si no existe (para persistencia)
     if "submitted" not in st.session_state:
@@ -139,8 +141,8 @@ def seccion_inputs_usuario():
         
         suma_asegurada = st.number_input(
             "**Suma Asegurada Solicitada (MXN):**",
-            min_value=1000000,
-            value=10000000,
+            min_value=0,
+            value=0,
             step=1000000,
             key="suma_asegurada"
         )
@@ -181,13 +183,13 @@ def seccion_chatbot(datos):
              return
         
         with st.spinner(f"Consultando fuentes externas sobre {CATALOGOS['giro_industria'].get(datos['giro_key'])} en {CATALOGOS['ubicacion_estado'].get(datos['estado_key'])}..."):
-            ai_output = buscar_y_resumir_riesgo_openai(datos['giro_key'], datos['estado_key'])
+            ai_output = buscar_resumir(datos['giro_key'], datos['estado_key'])
             st.session_state["ia_response"] = ai_output # Guarda la respuesta
 
             if ai_output != "ERROR_API":
                 st.success("Análisis de Riesgo Contextualizado por IA completado.")
             
-    # Mostrar resultados de la IA (si ya se ejecutó)
+    # Mostrar resultados de la IA
     if st.session_state.get("ia_response") and st.session_state["ia_response"] != "ERROR_API":
         resultado_pln = st.session_state["ia_response"]
         
@@ -314,8 +316,8 @@ def seccion_resultados(datos):
 if __name__ == "__main__":
     
     # 3.1. Sección 1: Input de Datos (Pestaña 1)
-    # seccion_inputs_usuario() se ejecuta primero para inicializar y capturar datos
-    datos_suscripcion = seccion_inputs_usuario() 
+    # inputs_usuario() se ejecuta primero para inicializar y capturar datos
+    datos_suscripcion = inputs_usuario() 
     
     st.sidebar.subheader("Datos Capturados")
     st.sidebar.json({k: v for k, v in datos_suscripcion.items() if k != "submitted"})
