@@ -4,7 +4,7 @@ from openai import OpenAI
 import json
 import os
 import time # Para simular procesos
-from prompts import stronger_prompt
+from prompts import final_prompt
 
 # --- 0. Configuración Inicial y Carga de Datos ---
 
