@@ -56,7 +56,7 @@ st.markdown("Herramienta de Ciencia de Datos para la evaluación de riesgos empr
 
 def buscar_resumir(giro_key, estado_key):
     """
-    Consulta a OpenAI para buscar noticias y obtener un resumen de riesgo.
+    Obtener un resumen de riesgo.
     """
     if not client:
         return "ERROR_API"
@@ -64,39 +64,34 @@ def buscar_resumir(giro_key, estado_key):
     giro = CATALOGOS["giro_industria"].get(giro_key, "Giro Desconocido")
     estado = CATALOGOS["ubicacion_estado"].get(estado_key, "Ubicación Desconocida")
     
-    prompt = f"""
-    Eres un suscriptor experto en seguros de daños para empresas en México.
-    Realiza una búsqueda exhaustiva de noticias en los últimos 3 años sobre siniestralidad,
-    exposición catastrófica o riesgos regulatorios para la industria de '{giro}'
-    en la región de '{estado}'.
-    
-    Luego:
-    1. Muestra 3 títulos de noticias realistas que encuentres.
-    2. Genera un resumen conciso de 5 líneas sobre los principales riesgos agravantes
-       encontrados para esta combinación de Giro/Ubicación.
-    3. Proporciona una clasificación de Riesgo 'IA' (Bajo, Medio, Alto) y una Cuota Estimada.
-    
-    En caso de no encontrar noticias relevantes sobre  la combinación Giro/Ubicación,
+    prompt_extraccion = f"""
+    TAREA PRINCIPAL: Realiza una búsqueda exhaustiva de noticias en los últimos 3 años sobre siniestralidad,
+    exposición catastrófica o riesgos regulatorios para la industria de '{giro}' en la región de '{estado}'.
+    En caso de no encontrar noticias relevantes sobre la combinación Giro/Ubicación,
     busca información general sobre riesgos en la industria de '{giro}' en México.
-
-    Formato de Salida Requerido:
+    
+    FORMATO DE SALIDA REQUERIDO (¡CRÍTICO PARA EL SISTEMA!):
+    Genera el siguiente formato EXCLUSIVAMENTE al inicio de tu respuesta, sin texto introductorio, para que el código lo pueda parsear:
+    
+    CLASIFICACION_RIESGO: [Bajo/Medio/Alto]
+    CUOTA_ESTIMADA: [Número]
+    
     NOTICIAS:
     - [Fecha de publicación] [Título 1] [Enlace si es posible]
     - [Fecha de publicación] [Título 2] [Enlace si es posible]
     - [Fecha de publicación] [Título 3] [Enlace si es posible]
     
-    RESUMEN DE RIESGO: [Resumen]
+    RESUMEN DE RIESGO: [Genera un resumen conciso de 5 líneas sobre los principales riesgos agravantes encontrados.]
     
-    CLASIFICACION_IA: [Bajo/Medio/Alto]
-    CUOTA_IA: [Número]
+    Aplica el 'Rol principal' y el 'Estilo y Tono' definidos en tu mensaje de sistema.
     """
     
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": stronger_prompt},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": final_prompt}, # Carga el Rol, Seguridad y Estilo
+                {"role": "user", "content": prompt_extraccion} # Da la tarea y el formato de extracción
             ],
             temperature=0.7
         )
@@ -175,10 +170,10 @@ def inputs_usuario():
 def seccion_chatbot(datos):
     """Define la sección 2: Chatbot especializado."""
     st.header("2. 🤖 Chatbot de Riesgos Empresariales (PLN)")
-    st.markdown("Consulta a la IA para obtener contexto de riesgo externo y noticias recientes.")
+    st.markdown("Consulta para obtener contexto de riesgo externo y noticias recientes.")
     
     # Botón para iniciar la consulta a la IA (Opción 4 y 5 del flujo)
-    if st.button("Buscar Noticias y Contexto de Riesgo con IA", disabled=(st.session_state.get("ia_response") is not None)):
+    if st.button("Buscar Noticias y Contexto de Riesgo", disabled=(st.session_state.get("ia_response") is not None)):
         if not client:
              st.error("No se puede contactar a OpenAI. Verifique su API Key.")
              return
@@ -188,22 +183,22 @@ def seccion_chatbot(datos):
             st.session_state["ia_response"] = ai_output # Guarda la respuesta
 
             if ai_output != "ERROR_API":
-                st.success("Análisis de Riesgo Contextualizado por IA completado.")
+                st.success("Análisis de Riesgo completado.")
             
     # Mostrar resultados de la IA
     if st.session_state.get("ia_response") and st.session_state["ia_response"] != "ERROR_API":
         resultado_pln = st.session_state["ia_response"]
         
-        st.subheader("Resumen de Riesgo y Noticias Ficticias")
+        st.subheader("Resumen de Riesgo y Noticias Encontradas")
         
         try:
             # Extracción del resumen y noticias
             partes = resultado_pln.split("RESUMEN DE RIESGO:")
             noticias_section = partes[0].replace("NOTICIAS:", "").strip()
-            resumen_section = partes[1].split("CLASIFICACION_IA:")[0].strip()
+            resumen_section = partes[1].split("CLASIFICACION_RIESGO:")[0].strip()
             
             st.code(noticias_section, language='markdown')
-            st.markdown(f"**Resumen de Riesgo Agravante (IA):** {resumen_section}")
+            st.markdown(f"**Resumen de Riesgo Agravante:** {resumen_section}")
             
             # --- Chat Interactivo ---
             st.divider()
@@ -233,10 +228,10 @@ def seccion_chatbot(datos):
                         chat_response = client.chat.completions.create(
                             model="gpt-3.5-turbo",
                             messages=[
-                                {"role": "system", "content": "Eres un asistente de suscripción que responde preguntas de un suscriptor basándose en un contexto de riesgo previamente generado."},
+                                {"role": "system", "content": final_prompt},
                                 {"role": "user", "content": chat_prompt}
                             ],
-                            temperature=0.5
+                            temperature=0.44
                         )
                         respuesta_ia = chat_response.choices[0].message.content
                         st.markdown(respuesta_ia)
