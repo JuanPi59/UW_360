@@ -65,7 +65,7 @@ def buscar_resumir(giro_key, estado_key):
     estado = CATALOGOS["ubicacion_estado"].get(estado_key, "Ubicación Desconocida")
     
     prompt_extraccion = f"""
-    TAREA PRINCIPAL: Realiza una búsqueda exhaustiva de noticias en los últimos 3 años sobre siniestralidad,
+    TAREA PRINCIPAL: Realiza una búsqueda exhaustiva en de noticias en internet de los últimos 3 años sobre siniestralidad,
     exposición catastrófica o riesgos regulatorios para la industria de '{giro}' en la región de '{estado}'.
     En caso de no encontrar noticias relevantes sobre la combinación Giro/Ubicación,
     busca información general sobre riesgos en la industria de '{giro}' en México.
@@ -77,11 +77,12 @@ def buscar_resumir(giro_key, estado_key):
     CUOTA_ESTIMADA: [Número]
     
     NOTICIAS:
-    - [Fecha de publicación] [Título 1] [Enlace si es posible]
-    - [Fecha de publicación] [Título 2] [Enlace si es posible]
-    - [Fecha de publicación] [Título 3] [Enlace si es posible]
+    - [Fecha de publicación] [Título 1] [Enlace de la noticia]
+    - [Fecha de publicación] [Título 2] [Enlace de la noticia]
+    - [Fecha de publicación] [Título 3] [Enlace de la noticia]
     
-    RESUMEN DE RIESGO: [Genera un resumen conciso de 5 líneas sobre los principales riesgos agravantes encontrados.]
+    RESUMEN DE RIESGO: 
+    [Genera un resumen conciso de 5 líneas sobre los principales riesgos agravantes encontrados.]
     
     Aplica el 'Rol principal' y el 'Estilo y Tono' definidos en tu mensaje de sistema.
     """
