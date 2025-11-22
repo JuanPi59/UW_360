@@ -3,8 +3,9 @@ import pandas as pd
 from openai import OpenAI
 import json
 import os
-import re # Necesario para la función estandarizar_columnas
-from prompts import final_prompt
+import re 
+# El archivo prompts.py debe existir y contener la variable final_prompt
+from prompts import final_prompt 
 
 # --- Configuración Inicial y Carga de Datos ---
 
@@ -111,7 +112,7 @@ def buscar_resumir(giro_key, estado_key):
 
 def inputs_usuario():
     """
-    Define la sección 1: Entrada de datos del suscriptor y dispara la consulta a la IA (Cambio 1).
+    Define la sección 1: Entrada de datos del suscriptor y dispara la consulta a la IA.
     """
     st.header("1. 📝 Input de Datos del Negocio")
     st.markdown("Ingrese los datos del riesgo a evaluar.")
@@ -162,7 +163,7 @@ def inputs_usuario():
             key="medidas_prevencion"
         )
         
-        # Botón de Envío (Cambio 1)
+        # Botón de Envío
         submit_button = st.form_submit_button("1. Evaluar Riesgo y Consultar IA")
         
     if submit_button:
@@ -177,7 +178,7 @@ def inputs_usuario():
             "medidas_prevencion": st.session_state.get("medidas_prevencion")
         }
 
-        # --- LÓGICA DE CONSULTA DIRECTA (Cambio 1) ---
+        # LÓGICA DE CONSULTA DIRECTA
         if client:
             with st.spinner(f"Consultando fuentes externas sobre {CATALOGOS['giro_industria'].get(datos_capturados['giro_key'])} en {CATALOGOS['ubicacion_estado'].get(datos_capturados['estado_key'])}..."):
                 ai_output = buscar_resumir(datos_capturados['giro_key'], datos_capturados['estado_key'])
@@ -201,7 +202,7 @@ def inputs_usuario():
 
 def seccion_chatbot(datos):
     """
-    Define la sección 2: Chatbot especializado (Cambios 2, 3, 4 y 5).
+    Define la sección 2: Chatbot especializado (con interfaz de chat mejorada y búsqueda contextual).
     """
     st.header("2. 🤖 Chatbot de Riesgos Empresariales (PLN)")
     st.markdown("Consulta para obtener contexto de riesgo externo y noticias recientes.")
@@ -220,22 +221,21 @@ def seccion_chatbot(datos):
             # La segunda parte contiene RESUMEN DE RIESGO
             resumen_section = partes[1].split("CLASIFICACION_RIESGO:")[0].strip()
 
-            # --- Visualización de Noticias y Resumen (Cambio 4) ---
+            # --- Visualización de Noticias y Resumen ---
             st.subheader("📰 Noticias y Enlaces Encontrados")
-            # Usamos markdown para renderizar las noticias con sus enlaces
             st.markdown(noticias_raw) # Muestra el texto tal como lo devuelve la IA
             
             st.subheader("🔍 Resumen de Riesgo Agravante")
             st.markdown(f"**{resumen_section}**")
             
-            # --- Chat Interactivo (Cambios 2 y 3) ---
+            # --- Chat Interactivo ---
             st.divider()
             st.info("Ahora puedes usar el chatbot para hacer preguntas sobre el resumen de riesgo.")
             
-            # CAMBIO 2: Contenedor de tamaño fijo para el chat
+            # Contenedor de tamaño fijo para el chat
             chat_container = st.container(height=400) 
             
-            # CAMBIO 3: Mostrar historial de mensajes (orden natural para que el input quede abajo)
+            # Mostrar historial de mensajes (orden natural)
             for message in st.session_state["messages"]:
                  with chat_container:
                      with st.chat_message(message["role"]):
@@ -244,18 +244,18 @@ def seccion_chatbot(datos):
             # Captura de input del usuario para el chat
             if prompt := st.chat_input("Escribe tu pregunta aquí..."):
                 st.session_state["messages"].append({"role": "user", "content": prompt})
-                # Volver a renderizar para mostrar el mensaje del usuario inmediatamente
+                # Usamos st.rerun() para que se muestre el mensaje del usuario de inmediato
                 st.rerun() 
             
-            # Si el último mensaje es del usuario, generar la respuesta
+            # Generar la respuesta si el último mensaje es del usuario
             if st.session_state["messages"] and st.session_state["messages"][-1]["role"] == "user":
                 
                 # 1. Definir el contexto inicial
                 contexto_inicial = f"El resumen de riesgo es: {resumen_section}. Las noticias son: {noticias_raw}"
                 
-                # 2. CAMBIO 5: Modificar el prompt para incluir la búsqueda real, usando el contexto como referencia.
+                # 2. Modificar el prompt para incluir la búsqueda real, usando el contexto como referencia.
                 chat_prompt = f"""
-                Basándote en tu rol de UW 360, realiza una búsqueda externa sobre el tema: '{prompt}'.
+                Basándote en tu rol de UW 360, realiza una búsqueda externa sobre el tema: '{st.session_state["messages"][-1]["content"]}'.
                 
                 Luego, usa el siguiente contexto de riesgo inicial como referencia para contextualizar tu respuesta y asegurarte de que es relevante para la suscripción de seguros de daños:
                 
@@ -321,7 +321,6 @@ def seccion_resultados(datos):
             
             try:
                 # Extracción de valores de IA
-                # Aseguramos la robustez buscando las etiquetas CLASIFICACION_RIESGO y CUOTA_ESTIMADA
                 clasificacion_ia = resultado_pln.split("CLASIFICACION_RIESGO:")[1].split("\n")[0].strip()
                 
                 # La IA devuelve la TASA por mil, no la cuota total
@@ -371,15 +370,26 @@ def seccion_administracion():
             nuevos_apetitos = {}
             giros_ordenados = sorted(APETITO_RIESGO.keys())
             
+            # Lista completa de opciones, incluyendo posibles valores anteriores para evitar errores.
+            opciones = ["Bajo", "Medio", "Medio-Alto", "Alto", "Riesgo Excluido"] 
+            
             for giro_key in giros_ordenados:
                 giro_nombre = CATALOGOS["giro_industria"][giro_key]
                 valor_actual = APETITO_RIESGO[giro_key]
                 
-                opciones = ["Bajo", "Medio", "Alto", "Riesgo Excluido"]
+                # Manejo de error para valores que puedan venir del JSON pero que no están en la lista de opciones
+                try:
+                    indice_seleccionado = opciones.index(valor_actual)
+                except ValueError:
+                    # Si el valor actual es inválido (ej. 'Medio-Alto' si no lo incluimos), forzamos a "Medio"
+                    indice_seleccionado = opciones.index("Medio")
+                    st.warning(f"El valor '{valor_actual}' en el JSON para {giro_nombre} no es estándar. Seleccione un valor nuevo.")
+
+                # Crear un selectbox para cada giro
                 nuevos_apetitos[giro_key] = st.selectbox(
                     f"**{giro_nombre} ({giro_key})**",
                     options=opciones,
-                    index=opciones.index(valor_actual),
+                    index=indice_seleccionado, 
                     key=f"ap_riesgo_{giro_key}"
                 )
             
@@ -431,7 +441,7 @@ def seccion_administracion():
 
 if __name__ == "__main__":
     
-    # 3.1. Sección 1: Input de Datos (Renderizada fuera de pestañas para mantener el estado del formulario)
+    # 3.1. Sección 1: Input de Datos
     datos_suscripcion = inputs_usuario() 
     
     st.sidebar.subheader("Datos Capturados")
