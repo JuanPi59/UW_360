@@ -7,14 +7,14 @@ from openai import OpenAI
 from xgboost import XGBRegressor
 from sklearn.preprocessing import OneHotEncoder
 
-from prompts_suscripcion import final_prompt  # <-- tu prompt de rol
+from prompts import final_prompt  # <-- tu prompt de rol
 
 # ==========================
 # CONFIGURACIÓN OPENAI
 # ==========================
 # Asegúrate de tener en .streamlit/secrets.toml:
 # OPENAI_API_KEY = "tu_api_key"
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+client = OpenAI(api_key=st.secrets["openai_api_key"])
 
 # ==========================
 # CARGA DE DATOS
@@ -196,12 +196,12 @@ def prediccion_siniestralidad(df_proc, giro_usuario, entidad_usuario, min_obs=3)
 # INTERFAZ STREAMLIT
 # ==========================
 
-st.set_page_config(page_title="Suscripción Inteligente - Daños", layout="wide")
+st.set_page_config(page_title="Suscriptor 360: Tu asistente virtual ", layout="wide")
 
 st.title("🛡️ Sistema Inteligente de Apoyo a Suscripción - Seguros de Daños")
 
 st.markdown("""
-Esta herramienta apoya al área de suscripción de una aseguradora de daños en México.
+Esta herramienta apoya al área de suscripción daños.
 Permite:
 - Seleccionar **Entidad, Sector y Giro**.
 - Obtener una **predicción de siniestralidad (net_sin_index)** para los próximos años.
@@ -280,7 +280,7 @@ INFORMACIÓN DEL CASO ACTUAL:
 
         try:
             resp = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5.1",
                 messages=mensajes_openai,
                 temperature=0.3,
                 max_tokens=400
