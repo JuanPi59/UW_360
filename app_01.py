@@ -1,16 +1,3 @@
-¡De acuerdo! Aquí tienes el código completo y unificado para app.py, incorporando la lógica de la consulta directa, la mejora de la interfaz del chat, la búsqueda contextual ampliada, y el nuevo módulo de Administración.
-
-Este código asume que tienes:
-
-Un archivo prompts.py con la variable final_prompt.
-
-Una carpeta data_config con los archivos catalogos.json y tarifas_riesgo.json.
-
-La clave de OpenAI configurada en st.secrets["openai_api_key"].
-
-🐍 app.py (Código Completo y Unificado)
-Python
-
 import streamlit as st
 import pandas as pd
 from openai import OpenAI
