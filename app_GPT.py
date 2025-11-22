@@ -280,7 +280,7 @@ INFORMACIÓN DEL CASO ACTUAL:
 
         try:
             resp = client.chat.completions.create(
-                model="gpt-5.1",
+                model="gpt-3.5-turbo",
                 messages=mensajes_openai,
                 temperature=0.3,
                 max_tokens=400
