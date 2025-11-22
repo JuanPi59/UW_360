@@ -23,7 +23,7 @@ client = OpenAI(api_key=st.secrets["openai_api_key"])
 def cargar_datos():
     # Ajusta la ruta y formato según tu entorno
     # Ejemplo: CSV -> pd.read_csv("df_proc.csv")
-    df = pd.read_parquet("df_proc.parquet")
+    df = pd.read_parquet("data_config/df_proc.parquet")
     return df
 
 df_proc = cargar_datos()
