@@ -355,3 +355,71 @@ INFORMACIÓN DEL CASO ACTUAL:
                 st.error(f"Error al comunicarse con el asistente: {e}")
 
 
+        # Construimos el HTML del historial de chat (sin indentación en el HTML)
+        chat_html = textwrap.dedent("""
+        <div id="chat-box" style="
+            height: 420px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background-color: #11111111;
+        ">
+        """)
+
+        for msg in st.session_state.chat_mensajes:
+            role = msg["role"]
+            content = msg["content"].replace("\n", "<br>")  # saltos de línea simples
+
+            if role == "user":
+                bubble = textwrap.dedent(f"""
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #DCF8C6;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-right-radius: 0.1rem;
+                        font-size: 0.9rem;
+                    ">
+                        {content}
+                    </div>
+                </div>
+                """)
+            else:  # assistant
+                bubble = textwrap.dedent(f"""
+                <div style="display: flex; justify-content: flex-start; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #FFFFFF;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-left-radius: 0.1rem;
+                        font-size: 0.9rem;
+                        box-shadow: 0 0 2px rgba(0,0,0,0.1);
+                    ">
+                        {content}
+                    </div>
+                </div>
+                """)
+
+            chat_html += bubble
+
+        chat_html += "</div>"
+
+        # Render del chat
+        st.markdown(chat_html, unsafe_allow_html=True)
+
+        # Script para hacer scroll al final
+        scroll_script = """
+<script>
+const chatBox = window.parent.document.getElementById('chat-box');
+if (chatBox) {
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+</script>
+"""
+        st.markdown(scroll_script, unsafe_allow_html=True)
+
+
