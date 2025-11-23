@@ -194,7 +194,7 @@ def prediccion_siniestralidad(df_proc, giro_usuario, entidad_usuario, min_obs=3)
 
 st.set_page_config(page_title="Suscriptor 360: Tu asistente virtual", layout="wide")
 
-st.title("🛡️ Sistema Inteligente de Apoyo a Suscripción - Seguros de Daños")
+st.title("🛡️ Suscriptor 360: Tu asistente virtual")
 
 st.markdown("""
 Esta herramienta apoya al área de suscripción daños.
@@ -235,7 +235,7 @@ with col1:
                 preds, nivel = prediccion_siniestralidad(df_proc, giro, entidad)
                 df_pred = (
                     pd.DataFrame(
-                        [{"Año": año, "net_sin_index_predicho": val}
+                        [{"Año": año, "Indice siniestralidad neta": val}
                          for año, val in preds.items()]
                     )
                     .sort_values("Año")
@@ -246,18 +246,81 @@ with col1:
                 st.error(f"Error al generar la predicción: {e}")
 
 with col2:
-    # Contenedor con borde para que parezca "cuadro de chat"
+    # Contenedor general del panel de chat
     with st.container(border=True):
         st.subheader("💬 Asistente Inteligente de Suscripción")
 
         if "chat_mensajes" not in st.session_state:
             st.session_state.chat_mensajes = []
 
-        # Mostrar historial dentro del cuadro
-        for msg in st.session_state.chat_mensajes:
-            st.chat_message(msg["role"]).markdown(msg["content"])
+        # Construimos el HTML del historial de chat
+        chat_html = """
+        <div id="chat-box" style="
+            height: 420px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background-color: #11111111;
+        ">
+        """
 
-        # Input de chat (aparece abajo, tipo ChatGPT)
+        for msg in st.session_state.chat_mensajes:
+            role = msg["role"]
+            content = msg["content"].replace("\n", "<br>")  # saltos de línea simples
+
+            if role == "user":
+                bubble = f"""
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #DCF8C6;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-right-radius: 0.1rem;
+                        font-size: 0.9rem;
+                    ">
+                        {content}
+                    </div>
+                </div>
+                """
+            else:  # assistant
+                bubble = f"""
+                <div style="display: flex; justify-content: flex-start; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #FFFFFF;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-left-radius: 0.1rem;
+                        font-size: 0.9rem;
+                        box-shadow: 0 0 2px rgba(0,0,0,0.1);
+                    ">
+                        {content}
+                    </div>
+                </div>
+                """
+
+            chat_html += bubble
+
+        chat_html += "</div>"
+
+        # Render del chat + script para hacer scroll al final
+        st.markdown(chat_html, unsafe_allow_html=True)
+        st.markdown(
+            """
+            <script>
+            const chatBox = window.parent.document.getElementById('chat-box');
+            if (chatBox) {
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Input de chat (siempre debajo del cuadro, como en ChatGPT)
         user_input = st.chat_input("Haz una pregunta sobre el riesgo, siniestralidad o contexto...")
 
         if user_input:
@@ -293,8 +356,6 @@ INFORMACIÓN DEL CASO ACTUAL:
                     "role": "assistant",
                     "content": respuesta_texto
                 })
-
-                st.chat_message("assistant").markdown(respuesta_texto)
 
             except Exception as e:
                 st.error(f"Error al comunicarse con el asistente: {e}")
