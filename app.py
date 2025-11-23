@@ -1,336 +1,410 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from openai import OpenAI
-import json
-import os
-import time # Para simular procesos
-from prompts import final_prompt
+from xgboost import XGBRegressor
+from sklearn.preprocessing import OneHotEncoder
+import textwrap  # para limpiar la indentación de HTML
 
-# --- 0. Configuración Inicial y Carga de Datos ---
+from prompts import final_prompt  # <-- tu prompt de rol
 
-# **REEMPLAZA** "TU_API_KEY_AQUI" con tu clave de OpenAI. 
-# En un entorno real, usa st.secrets["OPENAI_API_KEY"] para mayor seguridad.
-API_KEY = st.secrets["openai_api_key"]
+# ==========================
+# CONFIGURACIÓN OPENAI
+# ==========================
+client = OpenAI(api_key=st.secrets["openai_api_key"])
 
-try:
-    client = OpenAI(api_key=API_KEY)
-except Exception as e:
-    # Manejo de error si la clave no es válida o falta
-    st.error(f"Error al inicializar OpenAI: {e}. Asegúrese de reemplazar 'TU_API_KEY_AQUI' con su clave real.")
-    client = None # Aseguramos que el cliente sea None si falla
+# ==========================
+# CARGA DE DATOS
+# ==========================
+@st.cache_data
+def cargar_datos():
+    df = pd.read_parquet("data_config/df_proc.parquet")
+    return df
 
-def cargar_configuracion():
-    """Carga los catálogos y tarifas desde archivos JSON."""
-    try:
-        # Cargar Catálogos (Giro, Ubicación, Prevención)
-        with open('data_config/catalogos.json', 'r', encoding='utf-8') as f:
-            catalogos = json.load(f)
-        
-        # Cargar Tarifas y Apetito de Riesgo
-        with open('data_config/tarifas_riesgo.json', 'r', encoding='utf-8') as f:
-            tarifas = json.load(f)
+df_proc = cargar_datos()
 
-        return catalogos, tarifas
-    except FileNotFoundError as e:
-        # Detiene la ejecución si los archivos de configuración no se encuentran
-        st.error(f"Error crítico: Archivo de configuración no encontrado en data_config/. Asegúrese de crear la carpeta y los archivos JSON. Detalle: {e}")
-        st.stop()
-    except Exception as e:
-        st.error(f"Error al leer archivos JSON: {e}")
-        st.stop()
+# ==========================
+# SESSION STATE
+# ==========================
+if "chat_mensajes" not in st.session_state:
+    st.session_state.chat_mensajes = []
 
-# Carga global de la configuración
-CATALOGOS, TARIFAS = cargar_configuracion()
-TASA_BASE = TARIFAS.get("tasa_base", {})
-APETITO_RIESGO = TARIFAS.get("apetito_riesgo", {})
+if "df_resultado" not in st.session_state:
+    st.session_state.df_resultado = None
 
+# ==========================
+# MODELO DE PREDICCIÓN
+# ==========================
 
-st.set_page_config(
-    page_title="Underwritter 360 | Suscripción Inteligente",
-    layout="wide"
-)
-st.title("Underwritter 360:  Suscripción Inteligente")
-st.markdown("Herramienta de Ciencia de Datos para la evaluación de riesgos empresariales.")
-
-# --- 1. Funciones del Chatbot y PLN ---
-
-def buscar_resumir(giro_key, estado_key):
+def prediccion_siniestralidad(df_proc, giro_usuario, entidad_usuario, min_obs=3):
     """
-    Obtener un resumen de riesgo.
+    Entrena un modelo XGBoost "al vuelo" para un giro+entidad.
+    Si no hay suficientes datos a ese nivel, hace fallback a sector+entidad.
+    Devuelve: (dict{año: predicción}, nivel_usado: "giro" | "sector")
     """
-    if not client:
-        return "ERROR_API"
-        
-    giro = CATALOGOS["giro_industria"].get(giro_key, "Giro Desconocido")
-    estado = CATALOGOS["ubicacion_estado"].get(estado_key, "Ubicación Desconocida")
+    lag_features = [
+        'prima_emitida_neta', 'prima_retenida', 'prima_devengada',
+        'monto_de_siniestro', 'gasto_de_ajuste', 'salvamento',
+        'monto_pagado', 'monto_de_deducible', 'monto_coaseguro',
+        'n_mero_de_siniestros', 'recuperacion_de_terceros',
+        'recuperacion_de_reaseguro', 'suma_asegurada', 'cuota_millar',
+        'sin_index', 'siniestro_neto', 'net_sin_index'
+    ]
     
-    prompt_extraccion = f"""
-    TAREA PRINCIPAL: Realiza una búsqueda exhaustiva en de noticias en internet de los últimos 3 años sobre siniestralidad,
-    exposición catastrófica o riesgos regulatorios para la industria de '{giro}' en la región de '{estado}'.
-    En caso de no encontrar noticias relevantes sobre la combinación Giro/Ubicación,
-    busca información general sobre riesgos en la industria de '{giro}' en México.
-    
-    FORMATO DE SALIDA REQUERIDO (¡CRÍTICO PARA EL SISTEMA!):
-    Genera el siguiente formato EXCLUSIVAMENTE al inicio de tu respuesta, sin texto introductorio, para que el código lo pueda parsear:
-    
-    CLASIFICACION_RIESGO: [Bajo/Medio/Alto]
-    CUOTA_ESTIMADA: [Número]
-    
-    NOTICIAS:
-    - [Fecha de publicación] [Título 1] [Enlace de la noticia]
-    - [Fecha de publicación] [Título 2] [Enlace de la noticia]
-    - [Fecha de publicación] [Título 3] [Enlace de la noticia]
-    
-    RESUMEN DE RIESGO: 
-    [Genera un resumen conciso de 5 líneas sobre los principales riesgos agravantes encontrados.]
-    
-    Aplica el 'Rol principal' y el 'Estilo y Tono' definidos en tu mensaje de sistema.
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": final_prompt}, # Carga el Rol, Seguridad y Estilo
-                {"role": "user", "content": prompt_extraccion} # Da la tarea y el formato de extracción
-            ],
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        st.error(f"Error al conectar con OpenAI. Revisar API Key o permisos: {e}")
-        return "ERROR_API"
+    def _ajustar_y_predecir(df_base, cat_col, valor_cat, nivel_desc):
+        df = df_base.copy()
+        df = df.sort_values(['entidad', 'año'])
 
-# --- 2. Secciones de Streamlit (Pestañas) ---
+        # Asegurar numérico en columnas base
+        cols_num = [c for c in lag_features if c in df.columns]
+        if cols_num:
+            df[cols_num] = df[cols_num].apply(pd.to_numeric, errors='coerce')
 
-def inputs_usuario():
-    """Define la sección 1: Entrada de datos del suscriptor."""
-    st.header("1. 📝 Input de Datos del Negocio")
-    st.markdown("Ingrese los datos del riesgo a evaluar.")
-    
-    # Inicializa el estado de la sesión si no existe (para persistencia)
-    if "submitted" not in st.session_state:
-        st.session_state["submitted"] = False
-    if "ia_response" not in st.session_state:
-        st.session_state["ia_response"] = None
+        # Crear lags
+        for col in lag_features:
+            if col in df.columns:
+                df[f'{col}_lag1'] = df.groupby([cat_col, 'entidad'])[col].shift(1)
 
-    with st.form(key='formulario_suscripcion'):
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            industria_seleccionada = st.selectbox(
-                "**Giro / Industria (Clave SCIAN):**",
-                options=list(CATALOGOS["giro_industria"].keys()),
-                format_func=lambda x: CATALOGOS["giro_industria"][x],
-                key="giro_key"
+        # Asegurar numérico en lags
+        lag1_cols = [f'{c}_lag1' for c in lag_features if f'{c}_lag1' in df.columns]
+        if lag1_cols:
+            df[lag1_cols] = df[lag1_cols].apply(pd.to_numeric, errors='coerce')
+
+        # Limpieza de target y lags
+        df = df[df['net_sin_index'].notna()]
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df_model = df.dropna(subset=lag1_cols + ['net_sin_index'])
+
+        if df_model.shape[0] < min_obs:
+            raise ValueError(
+                f"No hay suficientes datos limpios a nivel {nivel_desc} "
+                f"para {cat_col}={valor_cat}, entidad={entidad_usuario}"
             )
-        
-        with col2:
-            estado_seleccionado = st.selectbox(
-                "**Ubicación (Estado):**",
-                options=list(CATALOGOS["ubicacion_estado"].keys()),
-                format_func=lambda x: CATALOGOS["ubicacion_estado"][x],
-                key="estado_key"
+
+        # One-hot de categoría (giro/sector) + entidad
+        ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+        encoded = ohe.fit_transform(df_model[[cat_col, 'entidad']])
+        ohe_cols = list(ohe.get_feature_names_out())
+        encoded_df = pd.DataFrame(encoded, columns=ohe_cols, index=df_model.index)
+
+        # Unir lags + OHE
+        df_model_enc = pd.concat([df_model, encoded_df], axis=1)
+
+        # Features: solo lags + OHE
+        lag1_cols = [c for c in df_model_enc.columns if c.endswith('_lag1')]
+        feature_cols = lag1_cols + ohe_cols
+
+        X = df_model_enc[feature_cols]
+        y = df_model_enc['net_sin_index']
+
+        if y.isna().any():
+            raise ValueError(f"y (net_sin_index) aún tiene NaNs a nivel {nivel_desc}.")
+
+        model = XGBRegressor(
+            n_estimators=600,
+            learning_rate=0.05,
+            max_depth=5,
+            subsample=0.9,
+            colsample_bytree=0.9
+        )
+        model.fit(X, y)
+
+        # Base para predicción: última observación
+        base = df.sort_values('año').iloc[-1].copy()
+        last_year = int(base['año'])
+
+        predicciones = {}
+        current = base.copy()
+
+        for step in [1, 2]:
+            año_futuro = last_year + step
+
+            # OHE para valor actual + entidad_usuario
+            encoded_row = ohe.transform([[valor_cat, entidad_usuario]])
+            encoded_row_df = pd.DataFrame(encoded_row, columns=ohe_cols)
+
+            # Usar solo lags actuales
+            row_lags = current[lag1_cols].to_frame().T.reset_index(drop=True)
+
+            # Unir lags + OHE
+            row = pd.concat(
+                [row_lags, encoded_row_df.reset_index(drop=True)],
+                axis=1
             )
-            
-        st.subheader("Información Financiera y Prevención")
-        
-        suma_asegurada = st.number_input(
-            "**Suma Asegurada Solicitada (MXN):**",
-            min_value=0,
-            value=0,
-            step=1000000,
-            key="suma_asegurada"
-        )
-        
-        prevencion_seleccionada = st.multiselect(
-            "**Medidas de Prevención Instaladas:**",
-            options=list(CATALOGOS["medidas_prevencion"].keys()),
-            format_func=lambda x: CATALOGOS["medidas_prevencion"][x],
-            default=["MP001", "MP003"],
-            key="medidas_prevencion"
-        )
-        
-        # Botón de Envío
-        submit_button = st.form_submit_button("1. Evaluar Riesgo y Consultar IA")
-        
-    if submit_button:
-        # Guarda el estado de envío
-        st.session_state["submitted"] = True
-        
-    datos_capturados = {
-        "giro_key": st.session_state.get("giro_key"),
-        "estado_key": st.session_state.get("estado_key"),
-        "suma_asegurada": st.session_state.get("suma_asegurada"),
-        "medidas_prevencion": st.session_state.get("medidas_prevencion")
-    }
-    
-    return datos_capturados
 
-def seccion_chatbot(datos):
-    """Define la sección 2: Chatbot especializado."""
-    st.header("2. 🤖 Chatbot de Riesgos Empresariales (PLN)")
-    st.markdown("Consulta para obtener contexto de riesgo externo y noticias recientes.")
-    
-    # Botón para iniciar la consulta a la IA (Opción 4 y 5 del flujo)
-    if st.button("Buscar Noticias y Contexto de Riesgo", disabled=(st.session_state.get("ia_response") is not None)):
-        if not client:
-             st.error("No se puede contactar a OpenAI. Verifique su API Key.")
-             return
-        
-        with st.spinner(f"Consultando fuentes externas sobre {CATALOGOS['giro_industria'].get(datos['giro_key'])} en {CATALOGOS['ubicacion_estado'].get(datos['estado_key'])}..."):
-            ai_output = buscar_resumir(datos['giro_key'], datos['estado_key'])
-            st.session_state["ia_response"] = ai_output # Guarda la respuesta
+            # Alinear columnas
+            row = row.reindex(columns=feature_cols, fill_value=0).astype(float)
 
-            if ai_output != "ERROR_API":
-                st.success("Análisis de Riesgo completado.")
-            
-    # Mostrar resultados de la IA
-    if st.session_state.get("ia_response") and st.session_state["ia_response"] != "ERROR_API":
-        resultado_pln = st.session_state["ia_response"]
-        
-        st.subheader("Resumen de Riesgo y Noticias Encontradas")
-        
+            pred = model.predict(row)[0]
+            predicciones[año_futuro] = float(pred)
+
+            # Actualizar lag de net_sin_index para el siguiente paso
+            if 'net_sin_index_lag1' in current.index:
+                current['net_sin_index_lag1'] = pred
+
+        return predicciones
+
+    # =========================
+    # NIVEL 1: GIRO + ENTIDAD
+    # =========================
+    df_ge = df_proc[(df_proc['giro'] == giro_usuario) &
+                    (df_proc['entidad'] == entidad_usuario)].copy()
+
+    if df_ge.shape[0] >= min_obs:
         try:
-            # Extracción del resumen y noticias
-            partes = resultado_pln.split("RESUMEN DE RIESGO:")
-            noticias_section = partes[0].replace("NOTICIAS:", "").strip()
-            resumen_section = partes[1].split("CLASIFICACION_RIESGO:")[0].strip()
-            
-            st.code(noticias_section, language='markdown')
-            st.markdown(f"**Resumen de Riesgo Agravante:** {resumen_section}")
-            
-            # --- Chat Interactivo ---
-            st.divider()
-            st.info("Ahora puedes usar el chatbot para hacer preguntas sobre el resumen de riesgo.")
-            
-            if "messages" not in st.session_state:
-                st.session_state["messages"] = [
-                    {"role": "assistant", "content": "Hola! ¿Tienes alguna pregunta sobre el resumen de riesgo o los factores de siniestralidad encontrados?"}
-                ]
-            
-            # Mostrar historial de mensajes
-            for message in st.session_state["messages"]:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
+            preds_giro = _ajustar_y_predecir(
+                df_ge, cat_col='giro',
+                valor_cat=giro_usuario,
+                nivel_desc='giro'
+            )
+            if not all(abs(v) < 1e-9 for v in preds_giro.values()):
+                return preds_giro, "giro"
+        except ValueError:
+            pass  # Intentaremos sector
 
-            # Captura de input del usuario para el chat
-            if prompt := st.chat_input("Escribe tu pregunta aquí..."):
-                st.session_state["messages"].append({"role": "user", "content": prompt})
-                with st.chat_message("user"):
-                    st.markdown(prompt)
-                
-                contexto = f"El resumen de riesgo es: {resumen_section}. Las noticias son: {noticias_section}"
-                chat_prompt = f"Basándote estrictamente en el siguiente contexto: '{contexto}', responde a la pregunta: '{prompt}'."
-                
-                with st.chat_message("assistant"):
-                    with st.spinner("Analizando pregunta..."):
-                        chat_response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[
-                                {"role": "system", "content": final_prompt},
-                                {"role": "user", "content": chat_prompt}
-                            ],
-                            temperature=0.44
-                        )
-                        respuesta_ia = chat_response.choices[0].message.content
-                        st.markdown(respuesta_ia)
-                st.session_state["messages"].append({"role": "assistant", "content": respuesta_ia})
+    # =========================
+    # NIVEL 2: SECTOR + ENTIDAD
+    # =========================
+    subset_giro = df_proc[df_proc['giro'] == giro_usuario]
+    if subset_giro.empty or subset_giro['sector'].isna().all():
+        raise ValueError(f"No se encontró sector asociado al giro={giro_usuario}")
 
-        except Exception as e:
-            st.error(f"Error al procesar la respuesta de la IA. Mensaje completo: {resultado_pln}")
-            st.error(f"Detalle de error de procesamiento: {e}")
+    sector_usuario = subset_giro['sector'].mode().iloc[0]
 
+    df_se = df_proc[(df_proc['sector'] == sector_usuario) &
+                    (df_proc['entidad'] == entidad_usuario)].copy()
 
-def seccion_resultados(datos):
-    """Define la sección 3: Resultados de la Suscripción."""
-    
-    st.header("3. 📊 Sección de Resultados")
-    
-    giro_key = datos.get("giro_key", "N/A")
-    suma_asegurada = datos.get("suma_asegurada", 0)
-    
-    # 3.1. Resultados de Catálogo (Datos Históricos/Internos)
-    tasa_base = TASA_BASE.get(giro_key, 1.0) # Tasa por mil
-    cuota_calculada_base = round((suma_asegurada / 1000) * tasa_base, 2)
-    clasificacion_riesgo_base = APETITO_RIESGO.get(giro_key, "Indefinido")
-
-    col_base, col_ia = st.columns(2)
-    
-    with col_base:
-        st.subheader("Resultados Basados en Catálogos de la Empresa")
-        st.info("Estos resultados son directos de las tablas de riesgo y tarifas internas.")
-        st.metric(
-            label="Cuota Calculada (MXN)",
-            value=f"${cuota_calculada_base:,.2f}",
+    if df_se.shape[0] < min_obs:
+        raise ValueError(
+            "No hay suficientes datos ni a nivel giro ni a nivel sector para "
+            f"giro={giro_usuario}, entidad={entidad_usuario}, sector={sector_usuario}"
         )
-        st.metric(
-            label="Clasificación de Riesgo Base",
-            value=clasificacion_riesgo_base,
-            delta="Apetito de Riesgo Fijo por Giro",
-            delta_color="off"
+
+    preds_sector = _ajustar_y_predecir(
+        df_se, cat_col='sector',
+        valor_cat=sector_usuario,
+        nivel_desc='sector'
+    )
+
+    return preds_sector, "sector"
+
+
+# ==========================
+# HISTÓRICO + PREDICCIÓN
+# ==========================
+
+def construir_tabla_hist_y_pred(df_proc, giro, entidad, preds_dict):
+    df_hist_base = df_proc[
+        (df_proc["giro"] == giro) &
+        (df_proc["entidad"] == entidad)
+    ].copy()
+
+    if df_hist_base.empty:
+        df_pred = (
+            pd.DataFrame(
+                [{"Año": año, "Índice siniestralidad neta": val}
+                 for año, val in preds_dict.items()]
+            )
+            .assign(Fuente="Predicción")
+            .sort_values("Año")
         )
-        
-    # 3.2. Resultados de la IA (Basados en PLN)
-    with col_ia:
-        st.subheader("Resultados Estimados por IA (PLN y Contexto)")
-        
-        if st.session_state.get("ia_response") and st.session_state["ia_response"] != "ERROR_API":
-            resultado_pln = st.session_state["ia_response"]
-            
+        return df_pred
+
+    df_hist = (
+        df_hist_base
+        .groupby("año", as_index=False)["net_sin_index"]
+        .mean()
+        .rename(columns={
+            "año": "Año",
+            "net_sin_index": "Índice siniestralidad neta"
+        })
+        .assign(Fuente="Histórico")
+    )
+
+    df_pred = (
+        pd.DataFrame(
+            [{"Año": año, "Índice siniestralidad neta": val}
+             for año, val in preds_dict.items()]
+        )
+        .assign(Fuente="Predicción")
+    )
+
+    df_resultado = (
+        pd.concat([df_hist, df_pred], ignore_index=True)
+        .sort_values(["Año", "Fuente"])
+    )
+
+    return df_resultado
+
+
+# ==========================
+# INTERFAZ STREAMLIT
+# ==========================
+
+st.set_page_config(page_title="Suscriptor 360: Tu asistente virtual", layout="wide")
+
+st.title("🛡️ Suscriptor 360: Tu asistente virtual")
+
+st.markdown("""
+Esta herramienta apoya al área de suscripción daños.
+Permite:
+- Seleccionar **Entidad, Sector y Giro**.
+- Obtener una **predicción de siniestralidad (net_sin_index)** para los próximos años.
+- Consultar a un **asistente inteligente** especializado en riesgos asegurables.
+""")
+
+# Dos columnas; el chat quedará al lado, tipo panel derecho
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.subheader("📥 Parámetros de entrada")
+
+    # Dropdown entidad
+    entidades = sorted(df_proc['entidad'].dropna().unique())
+    entidad = st.selectbox("Entidad", entidades)
+
+    # Dropdown sector
+    sectores = sorted(df_proc['sector'].dropna().unique())
+    sector = st.selectbox("Sector", sectores)
+
+    # Dropdown giro dependiente del sector
+    giros_filtrados = (
+        df_proc[df_proc['sector'] == sector]['giro']
+        .dropna()
+        .sort_values()
+        .unique()
+        .tolist()
+    )
+    giro = st.selectbox("Giro", giros_filtrados)
+
+    # Botón de predicción
+    if st.button("🔮 Generar predicción de siniestralidad"):
+        with st.spinner("Entrenando modelo y generando predicción..."):
             try:
-                # Extracción de valores de IA (utilizando las etiquetas CLASIFICACION_IA y CUOTA_IA)
-                clasificacion_ia = resultado_pln.split("CLASIFICACION_IA:")[1].split("\n")[0].strip()
-                cuota_ia_tasa = float(resultado_pln.split("CUOTA_IA:")[1].split("\n")[0].strip())
-                cuota_ia_estimada = round((suma_asegurada / 1000) * cuota_ia_tasa, 2)
-                
-                # Cálculo de Delta para comparación
-                delta_cuota = cuota_ia_estimada - cuota_calculada_base
-                delta_color = "inverse" if delta_cuota > 0 else "normal" # Rojo si sube, Verde si baja
-                
-                st.metric(
-                    label="Cuota Estimada por IA (MXN)",
-                    value=f"${cuota_ia_estimada:,.2f}",
-                    delta=f"{delta_cuota:,.2f} vs Catálogo",
-                    delta_color=delta_color
-                )
-                st.metric(
-                    label="Clasificación de Riesgo IA",
-                    value=clasificacion_ia,
-                    delta="Basado en Noticias y Contexto Externo"
-                )
-                
+                preds, nivel = prediccion_siniestralidad(df_proc, giro, entidad)
+                df_resultado = construir_tabla_hist_y_pred(df_proc, giro, entidad, preds)
+                st.session_state.df_resultado = df_resultado  # persistir
+                st.success(f"Predicción generada usando modelo a nivel **{nivel.upper()}**")
             except Exception as e:
-                st.warning("No se pudieron extraer los valores de CUOTA_IA y CLASIFICACION_IA del resultado de la IA.")
-                st.error(f"Error de extracción. Asegúrese que el modelo GPT devolvió el formato esperado.")
-                
-        else:
-            st.warning("Ejecute la consulta en la pestaña 'Chatbot Especializado' para obtener los resultados de la IA.")
+                st.error(f"Error al generar la predicción: {e}")
 
-# --- 3. Función Principal de la Aplicación ---
+    # Mostrar siempre la última tabla generada
+    if st.session_state.df_resultado is not None:
+        st.dataframe(st.session_state.df_resultado, hide_index=True)
 
-if __name__ == "__main__":
-    
-    # 3.1. Sección 1: Input de Datos (Pestaña 1)
-    # inputs_usuario() se ejecuta primero para inicializar y capturar datos
-    datos_suscripcion = inputs_usuario() 
-    
-    st.sidebar.subheader("Datos Capturados")
-    st.sidebar.json({k: v for k, v in datos_suscripcion.items() if k != "submitted"})
-    
-    # 3.2. Control de Flujo: Solo mostrar pestañas si se enviaron los datos
-    if st.session_state.get("submitted"):
-        
-        tab2, tab3 = st.tabs(["2. Chatbot Especializado", "3. Resultados Finales"])
-        
-        # 3.3. Sección 2: Chatbot y PLN
-        with tab2:
-            seccion_chatbot(datos_suscripcion)
-        
-        # 3.4. Sección 3: Resultados
-        with tab3:
-            seccion_resultados(datos_suscripcion)
-            
-    else:
-        st.info("Por favor, complete los datos en la pestaña '1. Input de Datos' y presione el botón para iniciar el análisis.")
+
+with col2:
+    with st.container(border=True):
+        st.subheader("💬 Asistente Inteligente de Suscripción")
+
+        # Helper para crear burbujas HTML
+        def make_bubble(role, content_html):
+            if role == "user":
+                return textwrap.dedent(f"""
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #DCF8C6;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-right-radius: 0.1rem;
+                        font-size: 0.9rem;
+                    ">
+                        {content_html}
+                    </div>
+                </div>
+                """)
+            else:
+                return textwrap.dedent(f"""
+                <div style="display: flex; justify-content: flex-start; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #FFFFFF;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-left-radius: 0.1rem;
+                        font-size: 0.9rem;
+                        box-shadow: 0 0 2px rgba(0,0,0,0.1);
+                    ">
+                        {content_html}
+                    </div>
+                </div>
+                """)
+
+        # Base del contenedor del chat
+        chat_html = textwrap.dedent("""
+        <div id="chat-box" style="
+            height: 420px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background-color: #11111111;
+        ">
+        """)
+
+        # Añadimos historial ya existente
+        for msg in st.session_state.chat_mensajes:
+            content_html = msg["content"].replace("\n", "<br>")
+            chat_html += make_bubble(msg["role"], content_html)
+
+        # Input de chat (al final visualmente)
+        user_input = st.chat_input("Haz una pregunta sobre el riesgo, siniestralidad o contexto...")
+
+        if user_input:
+            # 1) Añadimos mensaje de usuario a estado y al HTML
+            st.session_state.chat_mensajes.append({
+                "role": "user",
+                "content": user_input
+            })
+            chat_html += make_bubble("user", user_input.replace("\n", "<br>"))
+
+            # 2) Construimos contexto y llamamos a OpenAI
+            contexto_dinamico = f"""
+INFORMACIÓN DEL CASO ACTUAL:
+- Entidad: {entidad}
+- Sector: {sector}
+- Giro: {giro}
+"""
+
+            mensajes_openai = [
+                {"role": "system", "content": final_prompt},
+                {"role": "system", "content": contexto_dinamico},
+            ] + st.session_state.chat_mensajes
+
+            try:
+                resp = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=mensajes_openai,
+                    temperature=0.3,
+                    max_tokens=400
+                )
+                respuesta_texto = resp.choices[0].message.content
+
+                # 3) Añadimos respuesta al estado y al HTML
+                st.session_state.chat_mensajes.append({
+                    "role": "assistant",
+                    "content": respuesta_texto
+                })
+                chat_html += make_bubble("assistant", respuesta_texto.replace("\n", "<br>"))
+
+            except Exception as e:
+                st.error(f"Error al comunicarse con el asistente: {e}")
+
+        # Cerrar contenedor del chat
+        chat_html += "</div>"
+
+        # Render del chat
+        st.markdown(chat_html, unsafe_allow_html=True)
+
+        # Script para hacer scroll al final
+        scroll_script = """
+<script>
+const chatBox = window.parent.document.getElementById('chat-box');
+if (chatBox) {
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+</script>
+"""
+        st.markdown(scroll_script, unsafe_allow_html=True)
