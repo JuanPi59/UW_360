@@ -4,6 +4,7 @@ import numpy as np
 from openai import OpenAI
 from xgboost import XGBRegressor
 from sklearn.preprocessing import OneHotEncoder
+import textwrap  # <-- para limpiar la indentación de HTML
 
 from prompts import final_prompt  # <-- tu prompt de rol
 
@@ -187,6 +188,64 @@ def prediccion_siniestralidad(df_proc, giro_usuario, entidad_usuario, min_obs=3)
 
 
 # ==========================
+# HISTÓRICO + PREDICCIÓN
+# ==========================
+
+def construir_tabla_hist_y_pred(df_proc, giro, entidad, preds_dict):
+    """
+    Devuelve un DataFrame con:
+    - Histórico de net_sin_index por año para ese giro+entidad
+    - Filas de predicción para años futuros
+    """
+    # Histórico filtrado
+    df_hist_base = df_proc[
+        (df_proc["giro"] == giro) &
+        (df_proc["entidad"] == entidad)
+    ].copy()
+
+    # Si no hay histórico, solo devolvemos predicciones
+    if df_hist_base.empty:
+        df_pred = (
+            pd.DataFrame(
+                [{"Año": año, "Índice siniestralidad neta": val}
+                 for año, val in preds_dict.items()]
+            )
+            .assign(Fuente="Predicción")
+            .sort_values("Año")
+        )
+        return df_pred
+
+    # Agregamos histórico por año (puedes cambiar mean por sum si te conviene más)
+    df_hist = (
+        df_hist_base
+        .groupby("año", as_index=False)["net_sin_index"]
+        .mean()
+        .rename(columns={
+            "año": "Año",
+            "net_sin_index": "Índice siniestralidad neta"
+        })
+        .assign(Fuente="Histórico")
+    )
+
+    # Tabla de predicción
+    df_pred = (
+        pd.DataFrame(
+            [{"Año": año, "Índice siniestralidad neta": val}
+             for año, val in preds_dict.items()]
+        )
+        .assign(Fuente="Predicción")
+    )
+
+    # Concatenar
+    df_resultado = (
+        pd.concat([df_hist, df_pred], ignore_index=True)
+        .sort_values(["Año", "Fuente"])
+    )
+
+    return df_resultado
+
+
+# ==========================
 # INTERFAZ STREAMLIT
 # ==========================
 
@@ -230,36 +289,8 @@ with col1:
     if st.button("🔮 Generar predicción de siniestralidad"):
         with st.spinner("Entrenando modelo y generando predicción..."):
             try:
-                # 1) Predicción futura
                 preds, nivel = prediccion_siniestralidad(df_proc, giro, entidad)
-                df_pred = (
-                    pd.DataFrame(
-                        [{"Año": año, "Índice siniestralidad neta": val}
-                         for año, val in preds.items()]
-                    )
-                    .assign(Fuente="Predicción")
-                )
-
-                # 2) Histórico para ese giro + entidad (agregado por año)
-                df_hist = (
-                    df_proc[
-                        (df_proc["giro"] == giro) &
-                        (df_proc["entidad"] == entidad)
-                    ]
-                    .groupby("año", as_index=False)["net_sin_index"]
-                    .mean()
-                    .rename(columns={
-                        "año": "Año",
-                        "net_sin_index": "Índice siniestralidad neta"
-                    })
-                    .assign(Fuente="Histórico")
-                )
-
-                # 3) Combinar histórico + predicción
-                df_resultado = (
-                    pd.concat([df_hist, df_pred], ignore_index=True)
-                    .sort_values(["Año", "Fuente"])
-                )
+                df_resultado = construir_tabla_hist_y_pred(df_proc, giro, entidad, preds)
 
                 st.success(f"Predicción generada usando modelo a nivel **{nivel.upper()}**")
                 st.dataframe(df_resultado, hide_index=True)
@@ -276,8 +307,8 @@ with col2:
         if "chat_mensajes" not in st.session_state:
             st.session_state.chat_mensajes = []
 
-        # Construimos el HTML del historial de chat
-        chat_html = """
+        # Construimos el HTML del historial de chat (sin indentación en el HTML)
+        chat_html = textwrap.dedent("""
         <div id="chat-box" style="
             height: 420px;
             overflow-y: auto;
@@ -285,14 +316,14 @@ with col2:
             border-radius: 0.5rem;
             background-color: #11111111;
         ">
-        """
+        """)
 
         for msg in st.session_state.chat_mensajes:
             role = msg["role"]
             content = msg["content"].replace("\n", "<br>")  # saltos de línea simples
 
             if role == "user":
-                bubble = f"""
+                bubble = textwrap.dedent(f"""
                 <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
                     <div style="
                         max-width: 80%;
@@ -306,9 +337,9 @@ with col2:
                         {content}
                     </div>
                 </div>
-                """
+                """)
             else:  # assistant
-                bubble = f"""
+                bubble = textwrap.dedent(f"""
                 <div style="display: flex; justify-content: flex-start; margin-bottom: 0.5rem;">
                     <div style="
                         max-width: 80%;
@@ -323,25 +354,25 @@ with col2:
                         {content}
                     </div>
                 </div>
-                """
+                """)
 
             chat_html += bubble
 
         chat_html += "</div>"
 
-        # Render del chat + script para hacer scroll al final
+        # Render del chat
         st.markdown(chat_html, unsafe_allow_html=True)
-        st.markdown(
-            """
-            <script>
-            const chatBox = window.parent.document.getElementById('chat-box');
-            if (chatBox) {
-                chatBox.scrollTop = chatBox.scrollHeight;
-            }
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
+
+        # Script para hacer scroll al final (sin indentación para que no sea código markdown)
+        scroll_script = """
+<script>
+const chatBox = window.parent.document.getElementById('chat-box');
+if (chatBox) {
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+</script>
+"""
+        st.markdown(scroll_script, unsafe_allow_html=True)
 
         # Input de chat (siempre debajo del cuadro, como en ChatGPT)
         user_input = st.chat_input("Haz una pregunta sobre el riesgo, siniestralidad o contexto...")
