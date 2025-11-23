@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import openai
-import xgboost 
-import sklearn.preprocessing 
-import textwrap  
+from openai import OpenAI
+from xgboost import XGBRegressor
+from sklearn.preprocessing import OneHotEncoder
+import textwrap  # para limpiar la indentación de HTML
 
-from prompts import final_prompt  
+from prompts import final_prompt  # <-- tu prompt de rol
 
 # ==========================
 # CONFIGURACIÓN OPENAI
