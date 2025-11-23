@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -268,6 +266,8 @@ with col1:
 
             except Exception as e:
                 st.error(f"Error al generar la predicción: {e}")
+
+
 with col2:
     # Contenedor general del panel de chat
     with st.container(border=True):
