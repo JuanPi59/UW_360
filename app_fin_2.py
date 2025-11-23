@@ -4,6 +4,7 @@ import numpy as np
 from openai import OpenAI
 from xgboost import XGBRegressor
 from sklearn.preprocessing import OneHotEncoder
+import textwrap  # para limpiar la indentación de HTML
 
 from prompts import final_prompt  # <-- tu prompt de rol
 
@@ -22,7 +23,9 @@ def cargar_datos():
 
 df_proc = cargar_datos()
 
-# Inicializar estados
+# ==========================
+# SESSION STATE
+# ==========================
 if "chat_mensajes" not in st.session_state:
     st.session_state.chat_mensajes = []
 
@@ -262,17 +265,21 @@ Permite:
 - Consultar a un **asistente inteligente** especializado en riesgos asegurables.
 """)
 
+# Dos columnas; el chat quedará al lado, tipo panel derecho
 col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("📥 Parámetros de entrada")
 
+    # Dropdown entidad
     entidades = sorted(df_proc['entidad'].dropna().unique())
     entidad = st.selectbox("Entidad", entidades)
 
+    # Dropdown sector
     sectores = sorted(df_proc['sector'].dropna().unique())
     sector = st.selectbox("Sector", sectores)
 
+    # Dropdown giro dependiente del sector
     giros_filtrados = (
         df_proc[df_proc['sector'] == sector]['giro']
         .dropna()
@@ -282,37 +289,32 @@ with col1:
     )
     giro = st.selectbox("Giro", giros_filtrados)
 
+    # Botón de predicción
     if st.button("🔮 Generar predicción de siniestralidad"):
         with st.spinner("Entrenando modelo y generando predicción..."):
             try:
                 preds, nivel = prediccion_siniestralidad(df_proc, giro, entidad)
                 df_resultado = construir_tabla_hist_y_pred(df_proc, giro, entidad, preds)
-                st.session_state.df_resultado = df_resultado  # persistir en estado
+                st.session_state.df_resultado = df_resultado  # persistir
                 st.success(f"Predicción generada usando modelo a nivel **{nivel.upper()}**")
             except Exception as e:
                 st.error(f"Error al generar la predicción: {e}")
 
-    # Mostrar siempre la última tabla generada, aunque se use el chat
+    # Mostrar siempre la última tabla generada
     if st.session_state.df_resultado is not None:
         st.dataframe(st.session_state.df_resultado, hide_index=True)
 
 
 with col2:
+    # Contenedor general del panel de chat
     with st.container(border=True):
         st.subheader("💬 Asistente Inteligente de Suscripción")
 
-        # Historial de mensajes
-        for msg in st.session_state.chat_mensajes:
-            st.chat_message(msg["role"]).markdown(msg["content"])
-
         # Input de chat (Enter envía el mensaje)
-        user_input = st.chat_input(
-            "Haz una pregunta sobre el riesgo, siniestralidad o contexto...",
-            key="chat_input_principal"
-        )
+        user_input = st.chat_input("Haz una pregunta sobre el riesgo, siniestralidad o contexto...")
 
         if user_input:
-            # Añadir mensaje del usuario
+            # Guardar mensaje del usuario
             st.session_state.chat_mensajes.append({
                 "role": "user",
                 "content": user_input
@@ -345,8 +347,74 @@ INFORMACIÓN DEL CASO ACTUAL:
                     "content": respuesta_texto
                 })
 
-                # Mostrar solo el último mensaje nuevo sin perder historial
-                st.chat_message("assistant").markdown(respuesta_texto)
-
             except Exception as e:
                 st.error(f"Error al comunicarse con el asistente: {e}")
+
+        # Construimos el HTML del historial de chat (sin indentación en el HTML)
+        chat_html = textwrap.dedent("""
+        <div id="chat-box" style="
+            height: 420px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background-color: #11111111;
+        ">
+        """)
+
+        for msg in st.session_state.chat_mensajes:
+            role = msg["role"]
+            content = msg["content"].replace("\n", "<br>")  # saltos de línea simples
+
+            if role == "user":
+                bubble = textwrap.dedent(f"""
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #DCF8C6;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-right-radius: 0.1rem;
+                        font-size: 0.9rem;
+                    ">
+                        {content}
+                    </div>
+                </div>
+                """)
+            else:  # assistant
+                bubble = textwrap.dedent(f"""
+                <div style="display: flex; justify-content: flex-start; margin-bottom: 0.5rem;">
+                    <div style="
+                        max-width: 80%;
+                        background-color: #FFFFFF;
+                        color: #000;
+                        padding: 0.4rem 0.6rem;
+                        border-radius: 0.6rem;
+                        border-bottom-left-radius: 0.1rem;
+                        font-size: 0.9rem;
+                        box-shadow: 0 0 2px rgba(0,0,0,0.1);
+                    ">
+                        {content}
+                    </div>
+                </div>
+                """)
+
+            chat_html += bubble
+
+        chat_html += "</div>"
+
+        # Render del chat
+        st.markdown(chat_html, unsafe_allow_html=True)
+
+        # Script para hacer scroll al final
+        scroll_script = """
+<script>
+const chatBox = window.parent.document.getElementById('chat-box');
+if (chatBox) {
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+</script>
+"""
+        st.markdown(scroll_script, unsafe_allow_html=True)
+
+
